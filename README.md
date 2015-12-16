@@ -52,14 +52,13 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 __________________
 Additional Library
 
-NOTE: The following files are part of Piotr's Toolbox, and may had been modified for usage with c++
+NOTE: The following files are part of Piotr's Toolbox, and were modified for usage with c++
 
    src/piotr_fhog/gradientMex.cpp
    src/piotr_fhog/sse.hpp
    src/piotr_fhog/wrappers.hpp
   
-You are encouraged to get the full version of this library at
-http://vision.ucsd.edu/~pdollar/toolbox/doc/index.html
+You are encouraged to get the [full version of this library here.](http://vision.ucsd.edu/~pdollar/toolbox/doc/index.html)
 
 ______________________________________________________________________________
 
