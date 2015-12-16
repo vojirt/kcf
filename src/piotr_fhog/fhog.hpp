@@ -1,3 +1,9 @@
+/*
+    - c++ wrapper for the piotr toolbox
+    Created by Tomas Vojir, 2014
+*/
+
+
 #ifndef FHOG_HEADER_7813784354687
 #define FHOG_HEADER_7813784354687
 
