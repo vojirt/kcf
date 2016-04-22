@@ -177,7 +177,13 @@ cv::Mat KCF_Tracker::circshift(const cv::Mat &patch, int x_rot, int y_rot)
         orig_range = cv::Range(patch.cols - x_rot, patch.cols);
         rot_range = cv::Range(0, x_rot);
         patch(cv::Range::all(), orig_range).copyTo(tmp_x_rot(cv::Range::all(), rot_range));
+    }else {    //zero rotation
+        //move part that does not rotate over the edge
+        cv::Range orig_range(0, patch.cols);
+        cv::Range rot_range(0, patch.cols);
+        patch(cv::Range::all(), orig_range).copyTo(tmp_x_rot(cv::Range::all(), rot_range));
     }
+
     //circular rotate y-axis
     if (y_rot < 0) {
         //move part that does not rotate over the edge
@@ -198,6 +204,11 @@ cv::Mat KCF_Tracker::circshift(const cv::Mat &patch, int x_rot, int y_rot)
         //rotated part
         orig_range = cv::Range(patch.rows - y_rot, patch.rows);
         rot_range = cv::Range(0, y_rot);
+        tmp_x_rot(orig_range, cv::Range::all()).copyTo(rot_patch(rot_range, cv::Range::all()));
+    }else { //zero rotation
+        //move part that does not rotate over the edge
+        cv::Range orig_range(0, patch.rows);
+        cv::Range rot_range(0, patch.rows);
         tmp_x_rot(orig_range, cv::Range::all()).copyTo(rot_patch(rot_range, cv::Range::all()));
     }
 
