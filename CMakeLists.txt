@@ -18,6 +18,3 @@ add_subdirectory(src)
 
 add_executable(kcf_vot main_vot.cpp vot.hpp)
 target_link_libraries(kcf_vot ${OpenCV_LIBS} kcf)
-
-add_executable(kcf_test main_test.cpp)
-target_link_libraries(kcf_test ${OpenCV_LIBS} kcf)
