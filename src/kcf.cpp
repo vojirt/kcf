@@ -1,4 +1,5 @@
 #include "kcf.h"
+#include <numeric>
 
 void KCF_Tracker::init(cv::Mat &img, BBox_c &bbox)
 {
