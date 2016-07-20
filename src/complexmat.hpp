@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 template<typename T> class ComplexMat_
 {
@@ -131,10 +132,13 @@ private:
         assert(mat_rhs.n_channels == n_channels && mat_rhs.cols == cols && mat_rhs.rows == rows);
 
         ComplexMat_<T> result = *this;
-        for (int i = 0; i < n_channels; ++i)
-            for (auto lhs = result.p_data[i].begin(), rhs = mat_rhs.p_data[i].begin();
+        for (int i = 0; i < n_channels; ++i) {
+            auto lhs = result.p_data[i].begin();
+            auto rhs = mat_rhs.p_data[i].begin();
+            for (;
                  lhs != result.p_data[i].end(); ++lhs, ++rhs)
                 op(*lhs, *rhs);
+        }
 
         return result;
     }
