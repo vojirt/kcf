@@ -16,13 +16,9 @@ int main()
     vot_io.outputBoundingBox(init_rect);
     vot_io.getNextImage(image);
 
-    BBox_c bb;
-    bb.cx = init_rect.x + init_rect.width/2.;
-    bb.cy = init_rect.y + init_rect.height/2.;
-    bb.w = init_rect.width;
-    bb.h = init_rect.height;
-    tracker.init(image, bb);
+    tracker.init(image, init_rect);
 
+    BBox_c bb;
     double avg_time = 0.;
     int frames = 0;
     while (vot_io.getNextImage(image) == 1){

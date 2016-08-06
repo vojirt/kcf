@@ -1,38 +1,87 @@
 #include "kcf.h"
 #include <numeric>
 
-void KCF_Tracker::init(cv::Mat &img, BBox_c &bbox)
+void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
 {
-    p_pose = bbox;
+    //check boundary, enforce min size
+    double x1 = bbox.x, x2 = bbox.x + bbox.width, y1 = bbox.y, y2 = bbox.y + bbox.height;
+    if (x1 < 0) x1 = 0.;
+    if (x2 > img.cols-1) x2 = img.cols - 1;
+    if (y1 < 0) y1 = 0;
+    if (y2 > img.rows-1) y2 = img.rows - 1;
 
-    cv::Mat input;
+    if (x2-x1 < 2*p_cell_size) {
+        double diff = (2*p_cell_size -x2+x1)/2.;
+        if (x1 - diff >= 0 && x2 + diff < img.cols){
+            x1 -= diff;
+            x2 += diff;
+        } else if (x1 - 2*diff >= 0) {
+            x1 -= 2*diff;
+        } else {
+            x2 += 2*diff;
+        }
+    }
+    if (y2-y1 < 2*p_cell_size) {
+        double diff = (2*p_cell_size -y2+y1)/2.;
+        if (y1 - diff >= 0 && y2 + diff < img.rows){
+            y1 -= diff;
+            y2 += diff;
+        } else if (y1 - 2*diff >= 0) {
+            y1 -= 2*diff;
+        } else {
+            y2 += 2*diff;
+        }
+    }
+
+    p_pose.w = x2-x1;
+    p_pose.h = y2-y1;
+    p_pose.cx = x1 + p_pose.w/2.;
+    p_pose.cy = y1 + p_pose.h/2.;
+
+    cv::Mat input_gray, input_rgb = img.clone();
     if (img.channels() == 3){
-        cv::cvtColor(img, input, CV_BGR2GRAY);
-        input.convertTo(input, CV_32FC1);
+        cv::cvtColor(img, input_gray, CV_BGR2GRAY);
+        input_gray.convertTo(input_gray, CV_32FC1);
     }else
-        img.convertTo(input, CV_32FC1);
+        img.convertTo(input_gray, CV_32FC1);
 
     // don't need too large image
-    if (bbox.w*bbox.h > 100.*100.) {
+    // NOTE : NEVER SCALE DOWN FOR NOW
+    if (p_pose.w * p_pose.h > 100.*100.) {
         std::cout << "resizing image by factor of 2" << std::endl;
         p_resize_image = true;
         p_pose.scale(0.5);
-        cv::resize(input, input, cv::Size(0,0), 0.5, 0.5, cv::INTER_CUBIC);
+        cv::resize(input_gray, input_gray, cv::Size(0,0), 0.5, 0.5, cv::INTER_AREA);
+        cv::resize(input_rgb, input_rgb, cv::Size(0,0), 0.5, 0.5, cv::INTER_AREA);
     }
 
-    p_windows_size[0] = floor(p_pose.w * (1. + p_padding));
-    p_windows_size[1] = floor(p_pose.h * (1. + p_padding));
+    //compute win size + fit to fhog cell size
+    p_windows_size[0] = round(p_pose.w * (1. + p_padding) / p_cell_size) * p_cell_size;
+    p_windows_size[1] = round(p_pose.h * (1. + p_padding) / p_cell_size) * p_cell_size;
+
+    if (m_use_scale)
+        for (int i = -p_num_scales/2; i < p_num_scales/2; ++i)
+            p_scales.push_back(std::pow(p_scale_step, i));
+    else
+        p_scales.push_back(1.);
+
+    p_current_scale = 1.;
+    double min_size_ratio = std::max(2.*p_cell_size/p_windows_size[0], 2.*p_cell_size/p_windows_size[1]);
+    double max_size_ratio = std::min(floor(img.cols/p_cell_size)*p_cell_size/p_windows_size[0], floor(img.rows/p_cell_size)*p_cell_size/p_windows_size[1]);
+    p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
+    p_min_max_scale[1] = std::pow(p_scale_step, std::floor(std::log(max_size_ratio) / log(p_scale_step)));
+
+    std::cout << " min max scales: " << p_min_max_scale[0] << " " << p_min_max_scale[1] << std::endl;
 
     p_output_sigma = std::sqrt(p_pose.w*p_pose.h) * p_output_sigma_factor / static_cast<double>(p_cell_size);
 
     //window weights, i.e. labels
     p_yf = fft2(gaussian_shaped_labels(p_output_sigma, p_windows_size[0]/p_cell_size, p_windows_size[1]/p_cell_size));
-
     p_cos_window = cosine_window_function(p_yf.cols, p_yf.rows);
 
     //obtain a sub-window for training initial model
-    cv::Mat patch = get_subwindow(input, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1]);
-    p_model_xf = fft2(p_fhog.extract(patch, 2, p_cell_size, 9), p_cos_window);
+    std::vector<cv::Mat> path_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1]);
+    p_model_xf = fft2(path_feat, p_cos_window);
     //Kernel Ridge Regression, calculate alphas (in Fourier domain)
     ComplexMat kf = gaussian_correlation(p_model_xf, p_model_xf, p_kernel_sigma, true);
 
@@ -45,7 +94,7 @@ void KCF_Tracker::init(cv::Mat &img, BBox_c &bbox)
 
 void KCF_Tracker::setTrackerPose(BBox_c &bbox, cv::Mat & img)
 {
-    init(img, bbox);
+    init(img, bbox.get_rect());
 }
 
 void KCF_Tracker::updateTrackerPosition(BBox_c &bbox)
@@ -73,43 +122,71 @@ BBox_c KCF_Tracker::getBBox()
 
 void KCF_Tracker::track(cv::Mat &img)
 {
-    cv::Mat input;
+    cv::Mat input_gray, input_rgb = img.clone();
     if (img.channels() == 3){
-        cv::cvtColor(img, input, CV_BGR2GRAY);
-        input.convertTo(input, CV_32FC1);
+        cv::cvtColor(img, input_gray, CV_BGR2GRAY);
+        input_gray.convertTo(input_gray, CV_32FC1);
     }else
-        img.convertTo(input, CV_32FC1);
+        img.convertTo(input_gray, CV_32FC1);
 
     // don't need too large image
-    if (p_resize_image)
-        cv::resize(input, input, cv::Size(0,0), 0.5, 0.5, cv::INTER_CUBIC);
+    if (p_resize_image) {
+        cv::resize(input_gray, input_gray, cv::Size(0, 0), 0.5, 0.5, cv::INTER_AREA);
+        cv::resize(input_rgb, input_rgb, cv::Size(0, 0), 0.5, 0.5, cv::INTER_AREA);
+    }
 
-    cv::Mat patch = get_subwindow(input, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1]);
-    ComplexMat zf = fft2(p_fhog.extract(patch, 2, p_cell_size, 9), p_cos_window);
-    ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
-    cv::Mat response = ifft2(p_model_alphaf*kzf);
-    //std::cout << response << std::endl;
+    std::vector<cv::Mat> patch_feat;
+    int max_x = -1, max_y = -1;
+    double max_response = -1.;
+    int scale_index = 0;
+    for (size_t i = 0; i < p_scales.size(); ++i) {
+        patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale*p_scales[i]);
+        ComplexMat zf = fft2(patch_feat, p_cos_window);
+        ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
+        cv::Mat response = ifft2(p_model_alphaf * kzf);
+        //std::cout << response << std::endl;
 
-    /* target location is at the maximum response. we must take into
-    account the fact that, if the target doesn't move, the peak
-    will appear at the top-left corner, not at the center (this is
-    discussed in the paper). the responses wrap around cyclically. */
-    double min_val, max_val;
-    cv::Point2i min_loc, max_loc;
-    cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
+        /* target location is at the maximum response. we must take into
+        account the fact that, if the target doesn't move, the peak
+        will appear at the top-left corner, not at the center (this is
+        discussed in the paper). the responses wrap around cyclically. */
+        double min_val, max_val;
+        cv::Point2i min_loc, max_loc;
+        cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
 
-    if (max_loc.y > zf.rows/2) //wrap around to negative half-space of vertical axis
-        max_loc.y = max_loc.y - zf.rows;
-    if (max_loc.x > zf.cols/2) //same for horizontal axis
-        max_loc.x = max_loc.x - zf.cols;
+        if (max_loc.y > zf.rows / 2) //wrap around to negative half-space of vertical axis
+            max_loc.y = max_loc.y - zf.rows;
+        if (max_loc.x > zf.cols / 2) //same for horizontal axis
+            max_loc.x = max_loc.x - zf.cols;
+
+        if (max_val > max_response){
+            max_response = max_val;
+            max_x = max_loc.x;
+            max_y = max_loc.y;
+            scale_index = i;
+        }
+    }
 
     //shift bbox, no scale change
-    p_pose.cx += p_cell_size * max_loc.x;
-    p_pose.cy += p_cell_size * max_loc.y;
+    p_current_scale *= p_scales[scale_index];
+    if (p_current_scale < p_min_max_scale[0])
+        p_current_scale = p_min_max_scale[0];
+    if (p_current_scale > p_min_max_scale[1])
+        p_current_scale = p_min_max_scale[1];
+
+    p_pose.cx += p_cell_size * max_x;
+    p_pose.cy += p_cell_size * max_y;
+    if (p_pose.cx < 0) p_pose.cx = 0;
+    if (p_pose.cx > img.cols-1) p_pose.cx = img.cols-1;
+    if (p_pose.cy < 0) p_pose.cy = 0;
+    if (p_pose.cy > img.rows-1) p_pose.cy = img.rows-1;
+
+    p_pose.w *= p_scales[scale_index];
+    p_pose.h *= p_scales[scale_index];
 
     //obtain a subwindow for training at newly estimated target position
-    patch = get_subwindow(input, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1]);
-    ComplexMat xf = fft2(p_fhog.extract(patch, 2, p_cell_size, 9), p_cos_window);
+    patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale);
+    ComplexMat xf = fft2(patch_feat, p_cos_window);
     //Kernel Ridge Regression, calculate alphas (in Fourier domain)
     ComplexMat kf = gaussian_correlation(xf, xf, p_kernel_sigma, true);
 
@@ -127,6 +204,51 @@ void KCF_Tracker::track(cv::Mat &img)
 }
 
 // ****************************************************************************
+
+std::vector<cv::Mat> KCF_Tracker::get_features(cv::Mat & input_rgb, cv::Mat & input_gray, int cx, int cy, int size_x, int size_y, double scale)
+{
+    int size_x_scaled = floor(size_x*scale);
+    int size_y_scaled = floor(size_y*scale);
+
+    cv::Mat patch_gray = get_subwindow(input_gray, cx, cy, size_x_scaled, size_y_scaled);
+    cv::Mat patch_rgb = get_subwindow(input_rgb, cx, cy, size_x_scaled, size_y_scaled);
+
+    //resize to default size
+    if (scale > 1.){
+        //if we downsample use  INTER_AREA interpolation
+        cv::resize(patch_gray, patch_gray, cv::Size(size_x, size_y), 0., 0., cv::INTER_AREA);
+    }else {
+        cv::resize(patch_gray, patch_gray, cv::Size(size_x, size_y), 0., 0., cv::INTER_LINEAR);
+    }
+
+    // get hog features
+    std::vector<cv::Mat> hog_feat = p_fhog.extract(patch_gray, 2, p_cell_size, 9);
+
+    //get color rgb features (simple r,g,b channels)
+    std::vector<cv::Mat> color_feat;
+    if (m_use_color) {
+        //resize to default size
+        if (scale > 1.){
+            //if we downsample use  INTER_AREA interpolation
+            cv::resize(patch_rgb, patch_rgb, cv::Size(size_x/p_cell_size, size_y/p_cell_size), 0., 0., cv::INTER_AREA);
+        }else {
+            cv::resize(patch_rgb, patch_rgb, cv::Size(size_x/p_cell_size, size_y/p_cell_size), 0., 0., cv::INTER_LINEAR);
+        }
+
+        patch_rgb.convertTo(patch_rgb, CV_32F, 1. / 255., -0.5);
+
+        if (patch_rgb.channels() == 3) {
+            cv::Mat b(patch_rgb.size(), CV_32FC1);
+            cv::Mat g(patch_rgb.size(), CV_32FC1);
+            cv::Mat r(patch_rgb.size(), CV_32FC1);
+            color_feat = {b, g, r};
+            cv::split(patch_rgb, color_feat);
+        }
+    }
+    hog_feat.insert(hog_feat.end(), color_feat.begin(), color_feat.end());
+
+    return hog_feat;
+}
 
 cv::Mat KCF_Tracker::gaussian_shaped_labels(double sigma, int dim1, int dim2)
 {

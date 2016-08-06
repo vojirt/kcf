@@ -10,17 +10,26 @@ struct BBox_c
 {
     double cx, cy, w, h;
 
-    inline void scale(double factor){
+    inline void scale(double factor)
+    {
         cx *= factor;
         cy *= factor;
         w  *= factor;
         h  *= factor;
     }
+
+    inline cv::Rect get_rect()
+    {
+        return cv::Rect(cx-w/2., cy-h/2., w, h);
+    }
+
 };
 
 class KCF_Tracker
 {
 public:
+    bool m_use_scale {true};
+    bool m_use_color {true};
 
     /*
     padding             ... extra area surrounding the target           (1.5)
@@ -36,7 +45,7 @@ public:
     KCF_Tracker() {}
 
     // Init/re-init methods
-    void init(cv::Mat & img, BBox_c & bbox);
+    void init(cv::Mat & img, const cv::Rect & bbox);
     void setTrackerPose(BBox_c & bbox, cv::Mat & img);
     void updateTrackerPosition(BBox_c & bbox);
 
@@ -57,6 +66,11 @@ private:
     int p_cell_size = 4;            //4 for hog (= bin_size)
     int p_windows_size[2];
     cv::Mat p_cos_window;
+    int p_num_scales {7};
+    double p_scale_step = 1.01;
+    double p_current_scale = 1.;
+    double p_min_max_scale[2];
+    std::vector<double> p_scales;
 
     FHoG p_fhog;                    //class encapsulating hog feature extraction
 
@@ -76,9 +90,8 @@ private:
     ComplexMat fft2(const cv::Mat & input);
     ComplexMat fft2(const std::vector<cv::Mat> & input, const cv::Mat & cos_window);
     cv::Mat ifft2(const ComplexMat & inputf);
+    std::vector<cv::Mat> get_features(cv::Mat & input_rgb, cv::Mat & input_gray, int cx, int cy, int size_x, int size_y, double scale = 1.);
 
-    //tests
-    friend void run_tests(KCF_Tracker & tracker, const std::vector<bool> & tests);
 };
 
 #endif //KCF_HEADER_6565467831231
