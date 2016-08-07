@@ -67,7 +67,7 @@ private:
     int p_windows_size[2];
     cv::Mat p_cos_window;
     int p_num_scales {7};
-    double p_scale_step = 1.01;
+    double p_scale_step = 1.02;
     double p_current_scale = 1.;
     double p_min_max_scale[2];
     std::vector<double> p_scales;
@@ -91,6 +91,8 @@ private:
     ComplexMat fft2(const std::vector<cv::Mat> & input, const cv::Mat & cos_window);
     cv::Mat ifft2(const ComplexMat & inputf);
     std::vector<cv::Mat> get_features(cv::Mat & input_rgb, cv::Mat & input_gray, int cx, int cy, int size_x, int size_y, double scale = 1.);
+    cv::Point2f sub_pixel_peak(cv::Point & max_loc, cv::Mat & response);
+    double sub_grid_scale(std::vector<double> & responses);
 
 };
 

@@ -46,7 +46,6 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
         img.convertTo(input_gray, CV_32FC1);
 
     // don't need too large image
-    // NOTE : NEVER SCALE DOWN FOR NOW
     if (p_pose.w * p_pose.h > 100.*100.) {
         std::cout << "resizing image by factor of 2" << std::endl;
         p_resize_image = true;
@@ -71,7 +70,9 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
     p_min_max_scale[1] = std::pow(p_scale_step, std::floor(std::log(max_size_ratio) / log(p_scale_step)));
 
-    std::cout << " min max scales: " << p_min_max_scale[0] << " " << p_min_max_scale[1] << std::endl;
+    std::cout << "init: img size " << img.cols << " " << img.rows << std::endl;
+    std::cout << "init: win size. " << p_windows_size[0] << " " << p_windows_size[1] << std::endl;
+    std::cout << "init: min max scales: " << p_min_max_scale[0] << " " << p_min_max_scale[1] << std::endl;
 
     p_output_sigma = std::sqrt(p_pose.w*p_pose.h) * p_output_sigma_factor / static_cast<double>(p_cell_size);
 
@@ -136,15 +137,16 @@ void KCF_Tracker::track(cv::Mat &img)
     }
 
     std::vector<cv::Mat> patch_feat;
-    int max_x = -1, max_y = -1;
     double max_response = -1.;
+    cv::Mat max_response_map;
+    cv::Point2i max_response_pt;
     int scale_index = 0;
+    std::vector<double> scale_responses;
     for (size_t i = 0; i < p_scales.size(); ++i) {
         patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale*p_scales[i]);
         ComplexMat zf = fft2(patch_feat, p_cos_window);
         ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
         cv::Mat response = ifft2(p_model_alphaf * kzf);
-        //std::cout << response << std::endl;
 
         /* target location is at the maximum response. we must take into
         account the fact that, if the target doesn't move, the peak
@@ -154,35 +156,45 @@ void KCF_Tracker::track(cv::Mat &img)
         cv::Point2i min_loc, max_loc;
         cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
 
-        if (max_loc.y > zf.rows / 2) //wrap around to negative half-space of vertical axis
-            max_loc.y = max_loc.y - zf.rows;
-        if (max_loc.x > zf.cols / 2) //same for horizontal axis
-            max_loc.x = max_loc.x - zf.cols;
-
-        if (max_val > max_response){
-            max_response = max_val;
-            max_x = max_loc.x;
-            max_y = max_loc.y;
+        double weight = p_scales[i] < 1. ? p_scales[i] : 1./p_scales[i];
+        if (max_val*weight > max_response){
+            max_response = max_val*weight;
+            max_response_map = response;
+            max_response_pt = max_loc;
             scale_index = i;
         }
+        scale_responses.push_back(max_val*weight);
     }
 
-    //shift bbox, no scale change
-    p_current_scale *= p_scales[scale_index];
+    //sub pixel quadratic interpolation from neighbours
+    cv::Point2f subpixel_max_loc = sub_pixel_peak(max_response_pt, max_response_map);
+
+    if (subpixel_max_loc.y > max_response_map.rows / 2) //wrap around to negative half-space of vertical axis
+        subpixel_max_loc.y = subpixel_max_loc.y - max_response_map.rows;
+    if (subpixel_max_loc.x > max_response_map.cols / 2) //same for horizontal axis
+        subpixel_max_loc.x = subpixel_max_loc.x - max_response_map.cols;
+
+    //sub grid scale interpolation
+    double scale_subgrid = sub_grid_scale(scale_responses);
+
+    std::cout << "scale interp: " << p_scales[scale_index] << " vs. " << scale_subgrid  << " -> prev. final scale: " << p_current_scale << std::endl;
+
+    p_current_scale *= scale_subgrid;
+
     if (p_current_scale < p_min_max_scale[0])
         p_current_scale = p_min_max_scale[0];
     if (p_current_scale > p_min_max_scale[1])
         p_current_scale = p_min_max_scale[1];
 
-    p_pose.cx += p_cell_size * max_x;
-    p_pose.cy += p_cell_size * max_y;
+    p_pose.cx += p_cell_size * subpixel_max_loc.x;
+    p_pose.cy += p_cell_size * subpixel_max_loc.y;
     if (p_pose.cx < 0) p_pose.cx = 0;
     if (p_pose.cx > img.cols-1) p_pose.cx = img.cols-1;
     if (p_pose.cy < 0) p_pose.cy = 0;
     if (p_pose.cy > img.rows-1) p_pose.cy = img.rows-1;
 
-    p_pose.w *= p_scales[scale_index];
-    p_pose.h *= p_scales[scale_index];
+    p_pose.w *= scale_subgrid;
+    p_pose.h *= scale_subgrid;
 
     //obtain a subwindow for training at newly estimated target position
     patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale);
@@ -480,4 +492,84 @@ ComplexMat KCF_Tracker::gaussian_correlation(const ComplexMat &xf, const Complex
     cv::exp(- 1.f / (sigma * sigma) * cv::max((xf_sqr_norm + yf_sqr_norm - 2 * xy_sum) * numel_xf_inv, 0), tmp);
 
     return fft2(tmp);
+}
+
+float get_response_circular(cv::Point2i & pt, cv::Mat & response)
+{
+    int x = pt.x;
+    int y = pt.y;
+    if (x < 0)
+        x = response.cols + x;
+    if (y < 0)
+        y = response.rows + y;
+    if (x >= response.cols)
+        x = x - response.cols;
+    if (y >= response.rows)
+        y = y - response.rows;
+
+    return response.at<float>(y,x);
+}
+
+cv::Point2f KCF_Tracker::sub_pixel_peak(cv::Point & max_loc, cv::Mat & response)
+{
+    //find neighbourhood of max_loc (response is circular)
+    // 1 2 3
+    // 4   5
+    // 6 7 8
+    cv::Point2i p1(max_loc.x-1, max_loc.y-1), p2(max_loc.x, max_loc.y-1), p3(max_loc.x+1, max_loc.y-1);
+    cv::Point2i p4(max_loc.x-1, max_loc.y), p5(max_loc.x+1, max_loc.y);
+    cv::Point2i p6(max_loc.x-1, max_loc.y+1), p7(max_loc.x, max_loc.y+1), p8(max_loc.x+1, max_loc.y+1);
+
+    // fit 2d quadratic function f(x, y) = a*x^2 + b*x*y + c*y^2 + d*x + e*y + f
+    cv::Mat A = (cv::Mat_<float>(9, 6) <<
+                    p1.x*p1.x, p1.x*p1.y, p1.y*p1.y, p1.x, p1.y, 1.f,
+                    p2.x*p2.x, p2.x*p2.y, p2.y*p2.y, p2.x, p2.y, 1.f,
+                    p3.x*p3.x, p3.x*p3.y, p3.y*p3.y, p3.x, p3.y, 1.f,
+                    p4.x*p4.x, p4.x*p4.y, p4.y*p4.y, p4.x, p4.y, 1.f,
+                    p5.x*p5.x, p5.x*p5.y, p5.y*p5.y, p5.x, p5.y, 1.f,
+                    p6.x*p6.x, p6.x*p6.y, p6.y*p6.y, p6.x, p6.y, 1.f,
+                    p7.x*p7.x, p7.x*p7.y, p7.y*p7.y, p7.x, p7.y, 1.f,
+                    p8.x*p8.x, p8.x*p8.y, p8.y*p8.y, p8.x, p8.y, 1.f,
+                    max_loc.x*max_loc.x, max_loc.x*max_loc.y, max_loc.y*max_loc.y, max_loc.x, max_loc.y, 1.f);
+    cv::Mat fval = (cv::Mat_<float>(9, 1) <<
+                    get_response_circular(p1, response),
+                    get_response_circular(p2, response),
+                    get_response_circular(p3, response),
+                    get_response_circular(p4, response),
+                    get_response_circular(p5, response),
+                    get_response_circular(p6, response),
+                    get_response_circular(p7, response),
+                    get_response_circular(p8, response),
+                    get_response_circular(max_loc, response));
+    cv::Mat x;
+    cv::solve(A, fval, x, cv::DECOMP_SVD);
+
+    float a = x.at<float>(0), b = x.at<float>(1), c = x.at<float>(2),
+          d = x.at<float>(3), e = x.at<float>(4);
+
+    cv::Point2f sub_peak;
+    sub_peak.y = ((2.f*a*e)/b - d)/(b - (4*a*c)/b);
+    sub_peak.x = (-2*c*sub_peak.y - e)/b;
+
+    return sub_peak;
+}
+
+double KCF_Tracker::sub_grid_scale(std::vector<double> & responses)
+{
+    // interpolate from all values
+    // fit 1d quadratic function f(x) = a*x^2 + b*x + c
+    cv::Mat A (p_scales.size(), 3, CV_32FC1);
+    cv::Mat fval (p_scales.size(), 1, CV_32FC1);
+    for (size_t i = 0; i < p_scales.size(); ++i) {
+        A.at<float>(i, 0) = p_scales[i]*p_scales[i];
+        A.at<float>(i, 1) = p_scales[i];
+        A.at<float>(i, 2) = 1;
+        fval.at<float>(i) = responses[i];
+    }
+
+    cv::Mat x;
+    cv::solve(A, fval, x, cv::DECOMP_SVD);
+
+    float a = x.at<float>(0), b = x.at<float>(1);
+    return -b/(2*a);
 }
