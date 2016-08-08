@@ -32,6 +32,7 @@ public:
     bool m_use_color {true};
     bool m_use_subpixel_localization {true};
     bool m_use_subgrid_scale {true};
+    bool m_use_multithreading {true};
 
     /*
     padding             ... extra area surrounding the target           (1.5)

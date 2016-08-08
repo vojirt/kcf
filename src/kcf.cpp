@@ -1,5 +1,7 @@
 #include "kcf.h"
 #include <numeric>
+#include <thread>
+#include <future>
 
 void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
 {
@@ -87,11 +89,11 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     //Kernel Ridge Regression, calculate alphas (in Fourier domain)
     ComplexMat kf = gaussian_correlation(p_model_xf, p_model_xf, p_kernel_sigma, true);
 
-    p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
+//    p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
 
-//    p_model_alphaf_num = p_yf * kf;
-//    p_model_alphaf_den = kf * (kf + p_lambda);
-//    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+    p_model_alphaf_num = p_yf * kf;
+    p_model_alphaf_den = kf * (kf + p_lambda);
+    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
 }
 
 void KCF_Tracker::setTrackerPose(BBox_c &bbox, cv::Mat & img)
@@ -145,28 +147,63 @@ void KCF_Tracker::track(cv::Mat &img)
     cv::Point2i max_response_pt;
     int scale_index = 0;
     std::vector<double> scale_responses;
-    for (size_t i = 0; i < p_scales.size(); ++i) {
-        patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale*p_scales[i]);
-        ComplexMat zf = fft2(patch_feat, p_cos_window);
-        ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
-        cv::Mat response = ifft2(p_model_alphaf * kzf);
 
-        /* target location is at the maximum response. we must take into
-        account the fact that, if the target doesn't move, the peak
-        will appear at the top-left corner, not at the center (this is
-        discussed in the paper). the responses wrap around cyclically. */
-        double min_val, max_val;
-        cv::Point2i min_loc, max_loc;
-        cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
-
-        double weight = p_scales[i] < 1. ? p_scales[i] : 1./p_scales[i];
-        if (max_val*weight > max_response){
-            max_response = max_val*weight;
-            max_response_map = response;
-            max_response_pt = max_loc;
-            scale_index = i;
+    if (m_use_multithreading){
+        std::vector<std::future<cv::Mat>> async_res(p_scales.size());
+        for (size_t i = 0; i < p_scales.size(); ++i) {
+            async_res[i] = std::async(std::launch::async,
+                    [this, &input_gray, &input_rgb, i]() -> cv::Mat
+                    {
+                        std::vector<cv::Mat> patch_feat_async = get_features(input_rgb, input_gray, this->p_pose.cx, this->p_pose.cy, this->p_windows_size[0],
+                                                  this->p_windows_size[1], this->p_current_scale * this->p_scales[i]);
+                        ComplexMat zf = fft2(patch_feat_async, this->p_cos_window);
+                        ComplexMat kzf = gaussian_correlation(zf, this->p_model_xf, this->p_kernel_sigma);
+                        return ifft2(this->p_model_alphaf * kzf);
+                    });
         }
-        scale_responses.push_back(max_val*weight);
+
+        for (size_t i = 0; i < p_scales.size(); ++i) {
+            // wait for result
+            async_res[i].wait();
+            cv::Mat response = async_res[i].get();
+
+            double min_val, max_val;
+            cv::Point2i min_loc, max_loc;
+            cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
+
+            double weight = p_scales[i] < 1. ? p_scales[i] : 1./p_scales[i];
+            if (max_val*weight > max_response) {
+                max_response = max_val*weight;
+                max_response_map = response;
+                max_response_pt = max_loc;
+                scale_index = i;
+            }
+            scale_responses.push_back(max_val*weight);
+        }
+    } else {
+        for (size_t i = 0; i < p_scales.size(); ++i) {
+            patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale * p_scales[i]);
+            ComplexMat zf = fft2(patch_feat, p_cos_window);
+            ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
+            cv::Mat response = ifft2(p_model_alphaf * kzf);
+
+            /* target location is at the maximum response. we must take into
+            account the fact that, if the target doesn't move, the peak
+            will appear at the top-left corner, not at the center (this is
+            discussed in the paper). the responses wrap around cyclically. */
+            double min_val, max_val;
+            cv::Point2i min_loc, max_loc;
+            cv::minMaxLoc(response, &min_val, &max_val, &min_loc, &max_loc);
+
+            double weight = p_scales[i] < 1. ? p_scales[i] : 1./p_scales[i];
+            if (max_val*weight > max_response) {
+                max_response = max_val*weight;
+                max_response_map = response;
+                max_response_pt = max_loc;
+                scale_index = i;
+            }
+            scale_responses.push_back(max_val*weight);
+        }
     }
 
     //sub pixel quadratic interpolation from neighbours
@@ -204,17 +241,16 @@ void KCF_Tracker::track(cv::Mat &img)
     //Kernel Ridge Regression, calculate alphas (in Fourier domain)
     ComplexMat kf = gaussian_correlation(xf, xf, p_kernel_sigma, true);
 
-    ComplexMat alphaf = p_yf / (kf + p_lambda); //equation for fast training
-
     //subsequent frames, interpolate model
     p_model_xf = p_model_xf * (1. - p_interp_factor) + xf * p_interp_factor;
-    p_model_alphaf = p_model_alphaf * (1. - p_interp_factor) + alphaf * p_interp_factor;
+//    ComplexMat alphaf = p_yf / (kf + p_lambda); //equation for fast training
+//    p_model_alphaf = p_model_alphaf * (1. - p_interp_factor) + alphaf * p_interp_factor;
 
-//    ComplexMat alphaf_num = p_yf * kf;
-//    ComplexMat alphaf_den = kf * (kf + p_lambda);
-//    p_model_alphaf_num = p_model_alphaf_num * (1. - p_interp_factor) + (p_yf * kf) * p_interp_factor;
-//    p_model_alphaf_den = p_model_alphaf_den * (1. - p_interp_factor) + kf * (kf + p_lambda) * p_interp_factor;
-//    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+    ComplexMat alphaf_num = p_yf * kf;
+    ComplexMat alphaf_den = kf * (kf + p_lambda);
+    p_model_alphaf_num = p_model_alphaf_num * (1. - p_interp_factor) + (p_yf * kf) * p_interp_factor;
+    p_model_alphaf_den = p_model_alphaf_den * (1. - p_interp_factor) + kf * (kf + p_lambda) * p_interp_factor;
+    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
 }
 
 // ****************************************************************************
