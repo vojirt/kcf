@@ -65,6 +65,7 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
         p_scales.push_back(1.);
 
     p_current_scale = 1.;
+
     double min_size_ratio = std::max(2.*p_cell_size/p_windows_size[0], 2.*p_cell_size/p_windows_size[1]);
     double max_size_ratio = std::min(floor(img.cols/p_cell_size)*p_cell_size/p_windows_size[0], floor(img.rows/p_cell_size)*p_cell_size/p_windows_size[1]);
     p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
@@ -113,12 +114,14 @@ void KCF_Tracker::updateTrackerPosition(BBox_c &bbox)
 
 BBox_c KCF_Tracker::getBBox()
 {
-    if (p_resize_image) {
-        BBox_c tmp = p_pose;
+    BBox_c tmp = p_pose;
+    tmp.w *= p_current_scale;
+    tmp.h *= p_current_scale;
+
+    if (p_resize_image)
         tmp.scale(2);
-        return tmp;
-    } else
-        return p_pose;
+
+    return tmp;
 }
 
 void KCF_Tracker::track(cv::Mat &img)
@@ -175,7 +178,9 @@ void KCF_Tracker::track(cv::Mat &img)
         subpixel_max_loc.x = subpixel_max_loc.x - max_response_map.cols;
 
     //sub grid scale interpolation
-    double scale_subgrid = sub_grid_scale(scale_responses);
+    //2016-08-07 15:48:55+02:00 FIX : scale grid poor performance
+    //double scale_subgrid = sub_grid_scale(scale_responses);
+    double scale_subgrid = p_scales[scale_index];
 
     std::cout << "scale interp: " << p_scales[scale_index] << " vs. " << scale_subgrid  << " -> prev. final scale: " << p_current_scale << std::endl;
 
@@ -192,9 +197,6 @@ void KCF_Tracker::track(cv::Mat &img)
     if (p_pose.cx > img.cols-1) p_pose.cx = img.cols-1;
     if (p_pose.cy < 0) p_pose.cy = 0;
     if (p_pose.cy > img.rows-1) p_pose.cy = img.rows-1;
-
-    p_pose.w *= scale_subgrid;
-    p_pose.h *= scale_subgrid;
 
     //obtain a subwindow for training at newly estimated target position
     patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale);
