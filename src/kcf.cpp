@@ -170,29 +170,29 @@ void KCF_Tracker::track(cv::Mat &img)
     }
 
     //sub pixel quadratic interpolation from neighbours
-    cv::Point2f subpixel_max_loc = sub_pixel_peak(max_response_pt, max_response_map);
+    cv::Point2f new_location(max_response_pt.x, max_response_pt.y);
+    if (m_use_subpixel_localization)
+        new_location = sub_pixel_peak(max_response_pt, max_response_map);
 
-    if (subpixel_max_loc.y > max_response_map.rows / 2) //wrap around to negative half-space of vertical axis
-        subpixel_max_loc.y = subpixel_max_loc.y - max_response_map.rows;
-    if (subpixel_max_loc.x > max_response_map.cols / 2) //same for horizontal axis
-        subpixel_max_loc.x = subpixel_max_loc.x - max_response_map.cols;
+    if (new_location.y > max_response_map.rows / 2) //wrap around to negative half-space of vertical axis
+        new_location.y = new_location.y - max_response_map.rows;
+    if (new_location.x > max_response_map.cols / 2) //same for horizontal axis
+        new_location.x = new_location.x - max_response_map.cols;
 
     //sub grid scale interpolation
-    //2016-08-07 15:48:55+02:00 FIX : scale grid poor performance
-    //double scale_subgrid = sub_grid_scale(scale_responses);
-    double scale_subgrid = p_scales[scale_index];
+    double new_scale = p_scales[scale_index];
+    if (m_use_subgrid_scale)
+        new_scale = sub_grid_scale(scale_responses);
 
-    std::cout << "scale interp: " << p_scales[scale_index] << " vs. " << scale_subgrid  << " -> prev. final scale: " << p_current_scale << std::endl;
-
-    p_current_scale *= scale_subgrid;
+    p_current_scale *= new_scale;
 
     if (p_current_scale < p_min_max_scale[0])
         p_current_scale = p_min_max_scale[0];
     if (p_current_scale > p_min_max_scale[1])
         p_current_scale = p_min_max_scale[1];
 
-    p_pose.cx += p_cell_size * subpixel_max_loc.x;
-    p_pose.cy += p_cell_size * subpixel_max_loc.y;
+    p_pose.cx += p_cell_size*new_location.x;
+    p_pose.cy += p_cell_size*new_location.y;
     if (p_pose.cx < 0) p_pose.cx = 0;
     if (p_pose.cx > img.cols-1) p_pose.cx = img.cols-1;
     if (p_pose.cy < 0) p_pose.cy = 0;
