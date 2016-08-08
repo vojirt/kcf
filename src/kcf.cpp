@@ -276,7 +276,7 @@ std::vector<cv::Mat> KCF_Tracker::get_features(cv::Mat & input_rgb, cv::Mat & in
 
     //get color rgb features (simple r,g,b channels)
     std::vector<cv::Mat> color_feat;
-    if (m_use_color) {
+    if (m_use_color && input_rgb.channels() == 3) {
         //resize to default size
         if (scale > 1.){
             //if we downsample use  INTER_AREA interpolation
@@ -285,16 +285,18 @@ std::vector<cv::Mat> KCF_Tracker::get_features(cv::Mat & input_rgb, cv::Mat & in
             cv::resize(patch_rgb, patch_rgb, cv::Size(size_x/p_cell_size, size_y/p_cell_size), 0., 0., cv::INTER_LINEAR);
         }
 
+        //use rgb color space
         patch_rgb.convertTo(patch_rgb, CV_32F, 1. / 255., -0.5);
+        std::vector<cv::Mat> rgb;
+        cv::Mat ch1_r(patch_rgb.size(), CV_32FC1);
+        cv::Mat ch2_b(patch_rgb.size(), CV_32FC1);
+        cv::Mat ch3_g(patch_rgb.size(), CV_32FC1);
+        rgb = {ch1_r, ch2_b, ch3_g};
+        cv::split(patch_rgb, rgb);
 
-        if (patch_rgb.channels() == 3) {
-            cv::Mat b(patch_rgb.size(), CV_32FC1);
-            cv::Mat g(patch_rgb.size(), CV_32FC1);
-            cv::Mat r(patch_rgb.size(), CV_32FC1);
-            color_feat = {b, g, r};
-            cv::split(patch_rgb, color_feat);
-        }
+        color_feat.insert(color_feat.end(), rgb.begin(), rgb.end());
     }
+
     hog_feat.insert(hog_feat.end(), color_feat.begin(), color_feat.end());
 
     return hog_feat;
