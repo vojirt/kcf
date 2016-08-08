@@ -94,7 +94,7 @@ private:
     cv::Mat ifft2(const ComplexMat & inputf);
     std::vector<cv::Mat> get_features(cv::Mat & input_rgb, cv::Mat & input_gray, int cx, int cy, int size_x, int size_y, double scale = 1.);
     cv::Point2f sub_pixel_peak(cv::Point & max_loc, cv::Mat & response);
-    double sub_grid_scale(std::vector<double> & responses);
+    double sub_grid_scale(std::vector<double> & responses, int index = -1);
 
 };
 

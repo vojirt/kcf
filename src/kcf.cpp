@@ -182,7 +182,7 @@ void KCF_Tracker::track(cv::Mat &img)
     //sub grid scale interpolation
     double new_scale = p_scales[scale_index];
     if (m_use_subgrid_scale)
-        new_scale = sub_grid_scale(scale_responses);
+        new_scale = sub_grid_scale(scale_responses, scale_index);
 
     p_current_scale *= new_scale;
 
@@ -556,22 +556,34 @@ cv::Point2f KCF_Tracker::sub_pixel_peak(cv::Point & max_loc, cv::Mat & response)
     return sub_peak;
 }
 
-double KCF_Tracker::sub_grid_scale(std::vector<double> & responses)
+double KCF_Tracker::sub_grid_scale(std::vector<double> & responses, int index)
 {
-    // interpolate from all values
-    // fit 1d quadratic function f(x) = a*x^2 + b*x + c
-    cv::Mat A (p_scales.size(), 3, CV_32FC1);
-    cv::Mat fval (p_scales.size(), 1, CV_32FC1);
-    for (size_t i = 0; i < p_scales.size(); ++i) {
-        A.at<float>(i, 0) = p_scales[i]*p_scales[i];
-        A.at<float>(i, 1) = p_scales[i];
-        A.at<float>(i, 2) = 1;
-        fval.at<float>(i) = responses[i];
+    cv::Mat A, fval;
+    if (index < 0 || index > (int)p_scales.size()-1) {
+        // interpolate from all values
+        // fit 1d quadratic function f(x) = a*x^2 + b*x + c
+        A.create(p_scales.size(), 3, CV_32FC1);
+        fval.create(p_scales.size(), 1, CV_32FC1);
+        for (size_t i = 0; i < p_scales.size(); ++i) {
+            A.at<float>(i, 0) = p_scales[i] * p_scales[i];
+            A.at<float>(i, 1) = p_scales[i];
+            A.at<float>(i, 2) = 1;
+            fval.at<float>(i) = responses[i];
+        }
+    } else {
+        //only from neighbours
+        if (index == 0 || index == (int)p_scales.size()-1)
+            return p_scales[index];
+
+        A = (cv::Mat_<float>(3, 3) <<
+                       p_scales[index-1] * p_scales[index-1], p_scales[index-1], 1,
+                       p_scales[index] * p_scales[index], p_scales[index], 1,
+                       p_scales[index+1] * p_scales[index+1], p_scales[index+1], 1);
+        fval = (cv::Mat_<float>(3, 1) << responses[index-1], responses[index], responses[index+1]);
     }
 
     cv::Mat x;
     cv::solve(A, fval, x, cv::DECOMP_SVD);
-
     float a = x.at<float>(0), b = x.at<float>(1);
-    return -b/(2*a);
+    return -b / (2 * a);
 }
