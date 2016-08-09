@@ -5,6 +5,7 @@
 #include <vector>
 #include "fhog.hpp"
 #include "complexmat.hpp"
+#include "cnfeat.hpp"
 
 struct BBox_c
 {
@@ -33,6 +34,7 @@ public:
     bool m_use_subpixel_localization {true};
     bool m_use_subgrid_scale {true};
     bool m_use_multithreading {true};
+    bool m_use_cnfeat {true};
 
     /*
     padding             ... extra area surrounding the target           (1.5)
@@ -74,8 +76,6 @@ private:
     double p_current_scale = 1.;
     double p_min_max_scale[2];
     std::vector<double> p_scales;
-
-    FHoG p_fhog;                    //class encapsulating hog feature extraction
 
     //model
     ComplexMat p_yf;

@@ -12,7 +12,7 @@ include_directories ( ${OpenCV_INCLUDE_DIRS} )
 MESSAGE(STATUS "OpenCV_INCLUDE_DIRS: ${OpenCV_INCLUDE_DIRS}")
 
 INCLUDE_DIRECTORIES( ${CMAKE_BINARY_DIR}/)
-include_directories(${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/src/piotr_fhog)
+include_directories(${CMAKE_SOURCE_DIR}/src/ ${CMAKE_SOURCE_DIR}/src/piotr_fhog ${CMAKE_SOURCE_DIR}/src/cn)
 
 add_subdirectory(src)
 

@@ -19,7 +19,7 @@ public:
     //description: extract hist. of gradients(use_hog == 0), hog(use_hog == 1) or fhog(use_hog == 2)
     //input: float one channel image as input, hog type
     //return: computed descriptor
-    std::vector<cv::Mat> extract(const cv::Mat & img, int use_hog = 2, int bin_size = 4, int n_orients = 9, int soft_bin = -1, float clip = 0.2)
+    static std::vector<cv::Mat> extract(const cv::Mat & img, int use_hog = 2, int bin_size = 4, int n_orients = 9, int soft_bin = -1, float clip = 0.2)
     {
         // d image dimension -> gray image d = 1
         // h, w -> height, width of image
