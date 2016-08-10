@@ -7,6 +7,9 @@ ________________
 This is a C++ reimplementation of algorithm presented in "High-Speed Tracking with Kernelized Correlation Filters" paper.
 For more info and implementation in other languages visit the [autor's webpage!](http://home.isr.uc.pt/~henriques/circulant/).
 
+It is extended by a scale estimation (use several *7* different scales steps) and
+by a RGB (channels) and Color Names [2] features. Data for Color Names features were obtained from [SAMF tracker](https://github.com/ihpdep/samf).
+
 It is free for research use. If you find it useful or use it in your research, please acknowledge my git repository
 and cite the original paper [1].
 
@@ -38,14 +41,16 @@ Performance
 |  | **VOT2016 - baseline EAO** | **VOT2016 - unsupervised EAO** |    [**TV77**](http://cmp.felk.cvut.cz/~vojirtom/dataset/index.html) Avg. Recall |
 |:---------------|:--------------:|:------------------:|:----------------:|
 |  kcf          |0.1530        |   0.3859         |      51%       |
-|  skcf         |0.1661        |   0.4155         |      56%       |
-|  skcf-cn      |0.1783        |   0.4136         |      58%       |
+|  skcf         |0.1661        |   **0.4155**         |      56%       |
+|  skcf-cn      |**0.1783**        |   0.4136         |      **58%**       |
 
 __________
 References
 
 [1] João F. Henriques, Rui Caseiro, Pedro Martins, Jorge Batista, “High-Speed Tracking with Kernelized Correlation Filters“,
 IEEE Transactions on Pattern Analysis and Machine Intelligence, 2015
+
+[2] J. van de Weijer, C. Schmid, J. J. Verbeek, and D. Larlus. "Learning color names for real-world applications." TIP, 18(7):1512–1524, 2009.
 
 _____________________________________
 Copyright (c) 2014, Tomáš Vojíř
