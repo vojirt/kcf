@@ -60,6 +60,7 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     p_windows_size[0] = round(p_pose.w * (1. + p_padding) / p_cell_size) * p_cell_size;
     p_windows_size[1] = round(p_pose.h * (1. + p_padding) / p_cell_size) * p_cell_size;
 
+    p_scales.clear();
     if (m_use_scale)
         for (int i = -p_num_scales/2; i < p_num_scales/2; ++i)
             p_scales.push_back(std::pow(p_scale_step, i));
