@@ -62,14 +62,14 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
 
     p_scales.clear();
     if (m_use_scale)
-        for (int i = -p_num_scales/2; i < p_num_scales/2; ++i)
+        for (int i = -p_num_scales/2; i <= p_num_scales/2; ++i)
             p_scales.push_back(std::pow(p_scale_step, i));
     else
         p_scales.push_back(1.);
 
     p_current_scale = 1.;
 
-    double min_size_ratio = std::max(2.*p_cell_size/p_windows_size[0], 2.*p_cell_size/p_windows_size[1]);
+    double min_size_ratio = std::max(10.*p_cell_size/p_windows_size[0], 10.*p_cell_size/p_windows_size[1]);
     double max_size_ratio = std::min(floor((img.cols + p_windows_size[0]/3)/p_cell_size)*p_cell_size/p_windows_size[0], floor((img.rows + p_windows_size[1]/3)/p_cell_size)*p_cell_size/p_windows_size[1]);
     p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
     p_min_max_scale[1] = std::pow(p_scale_step, std::floor(std::log(max_size_ratio) / log(p_scale_step)));
@@ -487,7 +487,7 @@ cv::Mat KCF_Tracker::get_subwindow(const cv::Mat &input, int cx, int cy, int wid
 
     //out of image
     if (x1 >= input.cols || y1 >= input.rows || x2 < 0 || y2 < 0) {
-        patch.create(height, width, CV_32FC1);
+        patch.create(height, width, input.type());
         patch.setTo(0.f);
         return patch;
     }
