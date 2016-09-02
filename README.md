@@ -33,7 +33,9 @@ This code compiles into binary **kcf_vot**
 
 ./kcf_trax
 - using VOT 2014+ trax protocol (http://www.votchallenge.net/)
-
+- require [trax](https://github.com/votchallenge/trax) library to be compiled
+  with opencv support and installed. See trax instruction for compiling and
+  installing.
 
 ___________
 Performance
