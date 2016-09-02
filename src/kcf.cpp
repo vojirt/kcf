@@ -70,13 +70,13 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     p_current_scale = 1.;
 
     double min_size_ratio = std::max(2.*p_cell_size/p_windows_size[0], 2.*p_cell_size/p_windows_size[1]);
-    double max_size_ratio = std::min(floor(img.cols/p_cell_size)*p_cell_size/p_windows_size[0], floor(img.rows/p_cell_size)*p_cell_size/p_windows_size[1]);
+    double max_size_ratio = std::min(floor((img.cols + p_windows_size[0]/3)/p_cell_size)*p_cell_size/p_windows_size[0], floor((img.rows + p_windows_size[1]/3)/p_cell_size)*p_cell_size/p_windows_size[1]);
     p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
     p_min_max_scale[1] = std::pow(p_scale_step, std::floor(std::log(max_size_ratio) / log(p_scale_step)));
 
     std::cout << "init: img size " << img.cols << " " << img.rows << std::endl;
     std::cout << "init: win size. " << p_windows_size[0] << " " << p_windows_size[1] << std::endl;
-    std::cout << "init: min max scales: " << p_min_max_scale[0] << " " << p_min_max_scale[1] << std::endl;
+    std::cout << "init: min max scales factors: " << p_min_max_scale[0] << " " << p_min_max_scale[1] << std::endl;
 
     p_output_sigma = std::sqrt(p_pose.w*p_pose.h) * p_output_sigma_factor / static_cast<double>(p_cell_size);
 
@@ -208,14 +208,15 @@ void KCF_Tracker::track(cv::Mat &img)
     }
 
     //sub pixel quadratic interpolation from neighbours
+    if (max_response_pt.y > max_response_map.rows / 2) //wrap around to negative half-space of vertical axis
+        max_response_pt.y = max_response_pt.y - max_response_map.rows;
+    if (max_response_pt.x > max_response_map.cols / 2) //same for horizontal axis
+        max_response_pt.x = max_response_pt.x - max_response_map.cols;
+
     cv::Point2f new_location(max_response_pt.x, max_response_pt.y);
+
     if (m_use_subpixel_localization)
         new_location = sub_pixel_peak(max_response_pt, max_response_map);
-
-    if (new_location.y > max_response_map.rows / 2) //wrap around to negative half-space of vertical axis
-        new_location.y = new_location.y - max_response_map.rows;
-    if (new_location.x > max_response_map.cols / 2) //same for horizontal axis
-        new_location.x = new_location.x - max_response_map.cols;
 
     //sub grid scale interpolation
     double new_scale = p_scales[scale_index];
@@ -593,12 +594,14 @@ cv::Point2f KCF_Tracker::sub_pixel_peak(cv::Point & max_loc, cv::Mat & response)
     cv::Mat x;
     cv::solve(A, fval, x, cv::DECOMP_SVD);
 
-    float a = x.at<float>(0), b = x.at<float>(1), c = x.at<float>(2),
-          d = x.at<float>(3), e = x.at<float>(4);
+    double a = x.at<float>(0), b = x.at<float>(1), c = x.at<float>(2),
+           d = x.at<float>(3), e = x.at<float>(4);
 
-    cv::Point2f sub_peak;
-    sub_peak.y = ((2.f*a*e)/b - d)/(b - (4*a*c)/b);
-    sub_peak.x = (-2*c*sub_peak.y - e)/b;
+    cv::Point2f sub_peak(max_loc.x, max_loc.y);
+    if (b > 0 || b < 0) {
+        sub_peak.y = ((2.f * a * e) / b - d) / (b - (4 * a * c) / b);
+        sub_peak.x = (-2 * c * sub_peak.y - e) / b;
+    }
 
     return sub_peak;
 }
@@ -631,6 +634,9 @@ double KCF_Tracker::sub_grid_scale(std::vector<double> & responses, int index)
 
     cv::Mat x;
     cv::solve(A, fval, x, cv::DECOMP_SVD);
-    float a = x.at<float>(0), b = x.at<float>(1);
-    return -b / (2 * a);
+    double a = x.at<float>(0), b = x.at<float>(1);
+    double scale = p_scales[index];
+    if (a > 0 || a < 0)
+        scale = -b / (2 * a);
+    return scale;
 }
