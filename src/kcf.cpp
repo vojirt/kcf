@@ -69,7 +69,7 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
 
     p_current_scale = 1.;
 
-    double min_size_ratio = std::max(10.*p_cell_size/p_windows_size[0], 10.*p_cell_size/p_windows_size[1]);
+    double min_size_ratio = std::max(5.*p_cell_size/p_windows_size[0], 5.*p_cell_size/p_windows_size[1]);
     double max_size_ratio = std::min(floor((img.cols + p_windows_size[0]/3)/p_cell_size)*p_cell_size/p_windows_size[0], floor((img.rows + p_windows_size[1]/3)/p_cell_size)*p_cell_size/p_windows_size[1]);
     p_min_max_scale[0] = std::pow(p_scale_step, std::ceil(std::log(min_size_ratio) / log(p_scale_step)));
     p_min_max_scale[1] = std::pow(p_scale_step, std::floor(std::log(max_size_ratio) / log(p_scale_step)));
