@@ -31,7 +31,6 @@ class KCF_Tracker
 public:
     bool m_use_scale {true};
     bool m_use_color {true};
-    bool m_use_grayscale {false};
     bool m_use_subpixel_localization {true};
     bool m_use_subgrid_scale {true};
     bool m_use_multithreading {true};

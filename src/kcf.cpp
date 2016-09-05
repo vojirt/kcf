@@ -266,26 +266,15 @@ std::vector<cv::Mat> KCF_Tracker::get_features(cv::Mat & input_rgb, cv::Mat & in
     cv::Mat patch_rgb = get_subwindow(input_rgb, cx, cy, size_x_scaled, size_y_scaled);
 
     //resize to default size
-    cv::Mat patch_gray_scaled;
     if (scale > 1.){
         //if we downsample use  INTER_AREA interpolation
-        cv::resize(patch_gray, patch_gray_scaled, cv::Size(size_x, size_y), 0., 0., cv::INTER_AREA);
+        cv::resize(patch_gray, patch_gray, cv::Size(size_x, size_y), 0., 0., cv::INTER_AREA);
     }else {
-        cv::resize(patch_gray, patch_gray_scaled, cv::Size(size_x, size_y), 0., 0., cv::INTER_LINEAR);
+        cv::resize(patch_gray, patch_gray, cv::Size(size_x, size_y), 0., 0., cv::INTER_LINEAR);
     }
 
     // get hog features
-    std::vector<cv::Mat> hog_feat = FHoG::extract(patch_gray_scaled, 2, p_cell_size, 9);
-
-    if (m_use_grayscale){
-        if (scale > 1.){
-            //if we downsample use  INTER_AREA interpolation
-            cv::resize(patch_gray, patch_gray_scaled, cv::Size(size_x/p_cell_size, size_y/p_cell_size), 0., 0., cv::INTER_AREA);
-        }else {
-            cv::resize(patch_gray, patch_gray_scaled, cv::Size(size_x/p_cell_size, size_y/p_cell_size), 0., 0., cv::INTER_LINEAR);
-        }
-        hog_feat.push_back(patch_gray_scaled);
-    }
+    std::vector<cv::Mat> hog_feat = FHoG::extract(patch_gray, 2, p_cell_size, 9);
 
     //get color rgb features (simple r,g,b channels)
     std::vector<cv::Mat> color_feat;
