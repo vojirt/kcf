@@ -91,15 +91,15 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     if (m_use_linearkernel) {
         ComplexMat xfconj = p_model_xf.conj();
         p_model_alphaf_num = xfconj.mul(p_yf);
-        p_model_alphaf_den = (p_model_xf * xfconj).sum_over_channels();
+        p_model_alphaf_den = (p_model_xf * xfconj);
     } else {
         //Kernel Ridge Regression, calculate alphas (in Fourier domain)
         ComplexMat kf = gaussian_correlation(p_model_xf, p_model_xf, p_kernel_sigma, true);
         p_model_alphaf_num = p_yf * kf;
         p_model_alphaf_den = kf * (kf + p_lambda);
-        p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
-//        p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
     }
+    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+//        p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
 }
 
 void KCF_Tracker::setTrackerPose(BBox_c &bbox, cv::Mat & img)
@@ -164,7 +164,7 @@ void KCF_Tracker::track(cv::Mat &img)
                                                   this->p_windows_size[1], this->p_current_scale * this->p_scales[i]);
                         ComplexMat zf = fft2(patch_feat_async, this->p_cos_window);
                         if (m_use_linearkernel)
-                            return ifft2((p_model_alphaf_num * zf).sum_over_channels() / (p_model_alphaf_den + p_lambda));
+                            return ifft2((p_model_alphaf * zf).sum_over_channels());
                         else {
                             ComplexMat kzf = gaussian_correlation(zf, this->p_model_xf, this->p_kernel_sigma);
                             return ifft2(this->p_model_alphaf * kzf);
@@ -196,7 +196,7 @@ void KCF_Tracker::track(cv::Mat &img)
             ComplexMat zf = fft2(patch_feat, p_cos_window);
             cv::Mat response;
             if (m_use_linearkernel)
-                response = ifft2((p_model_alphaf_num * zf).sum_over_channels() / (p_model_alphaf_den + p_lambda));
+                response = ifft2((p_model_alphaf * zf).sum_over_channels());
             else {
                 ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
                 response = ifft2(p_model_alphaf * kzf);
@@ -263,7 +263,7 @@ void KCF_Tracker::track(cv::Mat &img)
     if (m_use_linearkernel) {
         ComplexMat xfconj = xf.conj();
         alphaf_num = xfconj.mul(p_yf);
-        alphaf_den = (xf * xfconj).sum_over_channels();
+        alphaf_den = (xf * xfconj);
     } else {
         //Kernel Ridge Regression, calculate alphas (in Fourier domain)
         ComplexMat kf = gaussian_correlation(xf, xf, p_kernel_sigma, true);
@@ -275,8 +275,7 @@ void KCF_Tracker::track(cv::Mat &img)
 
     p_model_alphaf_num = p_model_alphaf_num * (1. - p_interp_factor) + alphaf_num * p_interp_factor;
     p_model_alphaf_den = p_model_alphaf_den * (1. - p_interp_factor) + alphaf_den * p_interp_factor;
-    if (!m_use_linearkernel)
-        p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
 }
 
 // ****************************************************************************
