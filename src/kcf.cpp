@@ -87,14 +87,19 @@ void KCF_Tracker::init(cv::Mat &img, const cv::Rect & bbox)
     //obtain a sub-window for training initial model
     std::vector<cv::Mat> path_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1]);
     p_model_xf = fft2(path_feat, p_cos_window);
-    //Kernel Ridge Regression, calculate alphas (in Fourier domain)
-    ComplexMat kf = gaussian_correlation(p_model_xf, p_model_xf, p_kernel_sigma, true);
 
-//    p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
-
-    p_model_alphaf_num = p_yf * kf;
-    p_model_alphaf_den = kf * (kf + p_lambda);
-    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+    if (m_use_linearkernel) {
+        ComplexMat xfconj = p_model_xf.conj();
+        p_model_alphaf_num = xfconj.mul(p_yf);
+        p_model_alphaf_den = (p_model_xf * xfconj).sum_over_channels();
+    } else {
+        //Kernel Ridge Regression, calculate alphas (in Fourier domain)
+        ComplexMat kf = gaussian_correlation(p_model_xf, p_model_xf, p_kernel_sigma, true);
+        p_model_alphaf_num = p_yf * kf;
+        p_model_alphaf_den = kf * (kf + p_lambda);
+        p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+//        p_model_alphaf = p_yf / (kf + p_lambda);   //equation for fast training
+    }
 }
 
 void KCF_Tracker::setTrackerPose(BBox_c &bbox, cv::Mat & img)
@@ -158,8 +163,12 @@ void KCF_Tracker::track(cv::Mat &img)
                         std::vector<cv::Mat> patch_feat_async = get_features(input_rgb, input_gray, this->p_pose.cx, this->p_pose.cy, this->p_windows_size[0],
                                                   this->p_windows_size[1], this->p_current_scale * this->p_scales[i]);
                         ComplexMat zf = fft2(patch_feat_async, this->p_cos_window);
-                        ComplexMat kzf = gaussian_correlation(zf, this->p_model_xf, this->p_kernel_sigma);
-                        return ifft2(this->p_model_alphaf * kzf);
+                        if (m_use_linearkernel)
+                            return ifft2((p_model_alphaf_num * zf).sum_over_channels() / (p_model_alphaf_den + p_lambda));
+                        else {
+                            ComplexMat kzf = gaussian_correlation(zf, this->p_model_xf, this->p_kernel_sigma);
+                            return ifft2(this->p_model_alphaf * kzf);
+                        }
                     });
         }
 
@@ -185,8 +194,13 @@ void KCF_Tracker::track(cv::Mat &img)
         for (size_t i = 0; i < p_scales.size(); ++i) {
             patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale * p_scales[i]);
             ComplexMat zf = fft2(patch_feat, p_cos_window);
-            ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
-            cv::Mat response = ifft2(p_model_alphaf * kzf);
+            cv::Mat response;
+            if (m_use_linearkernel)
+                response = ifft2((p_model_alphaf_num * zf).sum_over_channels() / (p_model_alphaf_den + p_lambda));
+            else {
+                ComplexMat kzf = gaussian_correlation(zf, p_model_xf, p_kernel_sigma);
+                response = ifft2(p_model_alphaf * kzf);
+            }
 
             /* target location is at the maximum response. we must take into
             account the fact that, if the target doesn't move, the peak
@@ -240,19 +254,29 @@ void KCF_Tracker::track(cv::Mat &img)
     //obtain a subwindow for training at newly estimated target position
     patch_feat = get_features(input_rgb, input_gray, p_pose.cx, p_pose.cy, p_windows_size[0], p_windows_size[1], p_current_scale);
     ComplexMat xf = fft2(patch_feat, p_cos_window);
-    //Kernel Ridge Regression, calculate alphas (in Fourier domain)
-    ComplexMat kf = gaussian_correlation(xf, xf, p_kernel_sigma, true);
 
     //subsequent frames, interpolate model
     p_model_xf = p_model_xf * (1. - p_interp_factor) + xf * p_interp_factor;
-//    ComplexMat alphaf = p_yf / (kf + p_lambda); //equation for fast training
-//    p_model_alphaf = p_model_alphaf * (1. - p_interp_factor) + alphaf * p_interp_factor;
 
-    ComplexMat alphaf_num = p_yf * kf;
-    ComplexMat alphaf_den = kf * (kf + p_lambda);
-    p_model_alphaf_num = p_model_alphaf_num * (1. - p_interp_factor) + (p_yf * kf) * p_interp_factor;
-    p_model_alphaf_den = p_model_alphaf_den * (1. - p_interp_factor) + kf * (kf + p_lambda) * p_interp_factor;
-    p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
+    ComplexMat alphaf_num, alphaf_den;
+
+    if (m_use_linearkernel) {
+        ComplexMat xfconj = xf.conj();
+        alphaf_num = xfconj.mul(p_yf);
+        alphaf_den = (xf * xfconj).sum_over_channels();
+    } else {
+        //Kernel Ridge Regression, calculate alphas (in Fourier domain)
+        ComplexMat kf = gaussian_correlation(xf, xf, p_kernel_sigma, true);
+//        ComplexMat alphaf = p_yf / (kf + p_lambda); //equation for fast training
+//        p_model_alphaf = p_model_alphaf * (1. - p_interp_factor) + alphaf * p_interp_factor;
+        alphaf_num = p_yf * kf;
+        alphaf_den = kf * (kf + p_lambda);
+    }
+
+    p_model_alphaf_num = p_model_alphaf_num * (1. - p_interp_factor) + alphaf_num * p_interp_factor;
+    p_model_alphaf_den = p_model_alphaf_den * (1. - p_interp_factor) + alphaf_den * p_interp_factor;
+    if (!m_use_linearkernel)
+        p_model_alphaf = p_model_alphaf_num / p_model_alphaf_den;
 }
 
 // ****************************************************************************

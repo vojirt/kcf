@@ -52,6 +52,17 @@ public:
         return mat_const_operator( [](std::complex<T> & c) { c = std::complex<T>(c.real(), -c.imag()); } );
     }
 
+    ComplexMat_<T> sum_over_channels() const
+    {
+        assert(p_data.size() > 1);
+        ComplexMat_<T> result(this->rows, this->cols, 1);
+        result.p_data[0] = p_data[0];
+        for (int i = 1; i < n_channels; ++i) {
+            std::transform(result.p_data[0].begin(), result.p_data[0].end(), p_data[i].begin(), result.p_data[0].begin(), std::plus<std::complex<T>>());
+        }
+        return result;
+    }
+
     //return 2 channels (real, imag) for first complex channel
     cv::Mat to_cv_mat() const
     {
@@ -92,6 +103,12 @@ public:
     ComplexMat_<T> operator+(const T & rhs) const
     {
         return mat_const_operator( [&rhs](std::complex<T> & c) { c += rhs; });
+    }
+
+    //multiplying element-wise multichannel by one channel mats (rhs mat is with one channel)
+    ComplexMat_<T> mul(const ComplexMat_<T> & rhs) const
+    {
+        return matn_mat1_operator( [](std::complex<T> & c_lhs, const std::complex<T> & c_rhs) { c_lhs *= c_rhs; }, rhs);
     }
 
     //text output
@@ -135,8 +152,21 @@ private:
         for (int i = 0; i < n_channels; ++i) {
             auto lhs = result.p_data[i].begin();
             auto rhs = mat_rhs.p_data[i].begin();
-            for (;
-                 lhs != result.p_data[i].end(); ++lhs, ++rhs)
+            for ( ; lhs != result.p_data[i].end(); ++lhs, ++rhs)
+                op(*lhs, *rhs);
+        }
+
+        return result;
+    }
+    ComplexMat_<T> matn_mat1_operator(void (*op)(std::complex<T> & c_lhs, const std::complex<T> & c_rhs), const ComplexMat_<T> & mat_rhs) const
+    {
+        assert(mat_rhs.n_channels == 1 && mat_rhs.cols == cols && mat_rhs.rows == rows);
+
+        ComplexMat_<T> result = *this;
+        for (int i = 0; i < n_channels; ++i) {
+            auto lhs = result.p_data[i].begin();
+            auto rhs = mat_rhs.p_data[0].begin();
+            for ( ; lhs != result.p_data[i].end(); ++lhs, ++rhs)
                 op(*lhs, *rhs);
         }
 
@@ -145,8 +175,6 @@ private:
     ComplexMat_<T> mat_const_operator(const std::function<void(std::complex<T> & c_rhs)> & op) const
     {
         ComplexMat_<T> result = *this;
-//        std::for_each(result.p_data.begin(), result.p_data.end(),
-//                [&op] (std::vector<std::complex<T>> & channel) { std::for_each(channel.begin(), channel.end(), op); });
         for (int i = 0; i < n_channels; ++i)
             for (auto lhs = result.p_data[i].begin(); lhs != result.p_data[i].end(); ++lhs)
                 op(*lhs);

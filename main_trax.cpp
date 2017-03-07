@@ -35,6 +35,7 @@ int main()
             tracker->m_use_subgrid_scale = prop.get("use_subgrid_scale", true);
             tracker->m_use_multithreading = prop.get("use_multithreading", true);
             tracker->m_use_cnfeat = prop.get("use_cnfeat", true);
+            tracker->m_use_linearkernel = prop.get("use_linearkernel", false);
 
             tracker->init(image, rectangle);
 

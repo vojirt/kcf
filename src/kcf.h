@@ -35,6 +35,7 @@ public:
     bool m_use_subgrid_scale {true};
     bool m_use_multithreading {true};
     bool m_use_cnfeat {true};
+    bool m_use_linearkernel {false};
 
     /*
     padding             ... extra area surrounding the target           (1.5)
