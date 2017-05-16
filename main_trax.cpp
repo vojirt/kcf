@@ -13,9 +13,7 @@ int main()
     cv::Mat image;
     cv::Rect rectangle;
 
-    trax::Server handle(trax::Configuration(TRAX_IMAGE_PATH | TRAX_IMAGE_MEMORY | TRAX_IMAGE_BUFFER, TRAX_REGION_RECTANGLE), trax_no_log);
-
-    std::cout << handle.configuration().format_region << " " << TRAX_SUPPORTS(handle.configuration().format_region, TRAX_REGION_POLYGON) << std::endl;
+    trax::Server handle(trax::Metadata(TRAX_REGION_RECTANGLE, TRAX_IMAGE_PATH), trax_no_log);
 
     while (true) {
         trax::Properties prop;

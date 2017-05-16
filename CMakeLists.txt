@@ -24,15 +24,13 @@ add_executable(kcf_vot main_vot.cpp vot.hpp)
 target_link_libraries(kcf_vot ${OpenCV_LIBS} kcf)
 
 # Try to find TraX header and library ...
-FIND_FILE(TRAX_HEADER NAMES trax.h)
-IF (EXISTS ${TRAX_HEADER})
-    GET_FILENAME_COMPONENT(TRAX_DIR ${TRAX_HEADER} DIRECTORY)
-    ADD_DEFINITIONS(-DTRAX) # Added to enable TraX protocol support
-    LINK_DIRECTORIES(${TRAX_DIR}) # Add library directory
-    INCLUDE_DIRECTORIES(${TRAX_DIR}) # Add includes directory
+FIND_PACKAGE(trax REQUIRED COMPONENTS core opencv)
+IF (trax_FOUND)
+    MESSAGE(STATUS "Trax protocol found: building kcf_trax")
+    INCLUDE_DIRECTORIES(${TRAX_INCLUDE_DIRS})
+    LINK_DIRECTORIES(${TRAX_LIBRARY_DIRS})
 
     add_executable(kcf_trax main_trax.cpp)
-    target_link_libraries(kcf_trax ${OpenCV_LIBS} kcf trax trax_opencv)
+    target_link_libraries(kcf_trax ${OpenCV_LIBS} kcf ${TRAX_LIBRARIES})
 ENDIF()
-
 
