@@ -297,7 +297,7 @@ std::vector<cv::Mat> KCF_Tracker::get_features(cv::Mat & input_rgb, cv::Mat & in
     }
 
     // get hog features
-    std::vector<cv::Mat> hog_feat = FHoG::extract(patch_gray, 2, p_cell_size, 9, -1);
+    std::vector<cv::Mat> hog_feat = FHoG::extract(patch_gray, 2, p_cell_size, 9, 1);
 
     //get color rgb features (simple r,g,b channels)
     std::vector<cv::Mat> color_feat;
