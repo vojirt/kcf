@@ -546,20 +546,13 @@ ComplexMat KCF_Tracker::gaussian_correlation(const ComplexMat &xf, const Complex
     ComplexMat xyf = auto_correlation ? xf.sqr_mag() : xf * yf.conj();
 
     //ifft2 and sum over 3rd dimension, we dont care about individual channels
-    cv::Mat xy_sum(xf.rows, xf.cols, CV_32FC1);
-    xy_sum.setTo(0);
-    cv::Mat ifft2_res = ifft2(xyf);
-    for (int y = 0; y < xf.rows; ++y) {
-        float * row_ptr = ifft2_res.ptr<float>(y);
-        float * row_ptr_sum = xy_sum.ptr<float>(y);
-        for (int x = 0; x < xf.cols; ++x){
-            row_ptr_sum[x] = std::accumulate((row_ptr + x*ifft2_res.channels()), (row_ptr + x*ifft2_res.channels() + ifft2_res.channels()), 0.f);
-        }
-    }
+    ComplexMat xyf_sum = xyf.sum_over_channels();
+
+    cv::Mat ifft2_res = ifft2(xyf_sum);
 
     float numel_xf_inv = 1.f/(xf.cols * xf.rows * xf.n_channels);
     cv::Mat tmp;
-    cv::exp(- 1.f / (sigma * sigma) * cv::max((xf_sqr_norm + yf_sqr_norm - 2 * xy_sum) * numel_xf_inv, 0), tmp);
+    cv::exp(- 1.f / (sigma * sigma) * cv::max((xf_sqr_norm + yf_sqr_norm - 2 * ifft2_res) * numel_xf_inv, 0), tmp);
 
     return fft2(tmp);
 }
