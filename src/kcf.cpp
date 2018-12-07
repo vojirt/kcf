@@ -618,9 +618,12 @@ cv::Point2f KCF_Tracker::sub_pixel_peak(cv::Point & max_loc, cv::Mat & response)
            d = x.at<float>(3), e = x.at<float>(4);
 
     cv::Point2f sub_peak(max_loc.x, max_loc.y);
-    if (b > 0 || b < 0) {
+    if (4 * a * c - b * b > 1e-5) {
         sub_peak.y = ((2.f * a * e) / b - d) / (b - (4 * a * c) / b);
         sub_peak.x = (-2 * c * sub_peak.y - e) / b;
+        if (fabs(sub_peak.x - max_loc.x) > 1 ||
+            fabs(sub_peak.y - max_loc.y) > 1)
+            sub_peak = max_loc;
     }
 
     return sub_peak;
